@@ -268,9 +268,9 @@ def main():
         # Predefined tasks
         st.sidebar.header("Opciones de tarea")
         options = [
-            "Calcula la suma de 2 y 3 usando Python Agent",
-            "Crea una función que calcule el factorial de un número",
-            "Genera una lista de los primeros 10 números cuadrados"
+            "Haz un codigo para 'Hello World' en Python",
+            "Haz una calculadora en Python",
+            "Haz un ejemplo de uso de diccionarios en Python"
         ]
         task = st.sidebar.selectbox("Selecciona una tarea:", options)
 
