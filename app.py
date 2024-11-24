@@ -3,86 +3,128 @@ import streamlit as st
 from langchain_experimental.tools import PythonREPLTool
 from langchain import hub
 from langchain_openai import ChatOpenAI
-from langchain.agents import create_react_agent
+from langchain.agents import create_react_agent, AgentExecutor
+from langchain_experimental.agents import create_csv_agent
+from langchain_core.tools import Tool
 from dotenv import load_dotenv
-from langchain.agents import AgentExecutor
 import datetime
 import os
 
+# Load environment variables
 load_dotenv()
-# App
+
+# Save and load history
 def save_history(question, answer):
     with open("history.txt", "a") as f:
-        f.write(f"{datetime.datetime.now()} : {question}->{answer}\n")
+        f.write(f"{datetime.datetime.now()} : {question} -> {answer}\n")
 
 def load_history():
-    if os.path.exist("history.txt"):
+    if os.path.exists("history.txt"):
         with open("history.txt", "r") as f:
             return f.readlines()
-    return
+    return []
 
+# Main app function
 def main():
-    st.set_page_config(page_title="Agente Python Interactivo",
-                       page_icon=":rocket",
-                       layout="wide")
+    st.set_page_config(page_title="Agente Interactivo", page_icon=":robot:", layout="wide")
+    st.title("Agente Interactivo con Python y CSV")
 
-    st.title("Agente Python Interactivo")
-    st.markdown(
-        """
-        <style>
-        .stApp{background-color:black;}
-        .title{color=#ff4bff;}
-        .button{background-color: #ff4bff; color:white; border-radius: 5px;}
-        .input{border: 1px solid ##ff4bff; border-radius:5px}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    # Instructions for the app
+    st.markdown("""
+    ### Instrucciones:
+    - Este agente puede responder preguntas usando Python o realizar análisis sobre archivos CSV.
+    - Puedes elegir entre solicitudes predefinidas o escribir tus propias preguntas.
+    - Usa el botón correspondiente para ejecutar las tareas.
+    """)
 
-    instrucciones = """
-        - Siempre usa la herramienta, incluso si sabes la respuesta.
-        - Debes uar codigo de Python 3.11 para responder.
-        - Eres un agente que puede escribir codigo.
-        - Solo responde la pregunta escribiendo codigo, incluso si sabes la respuesta.
-        - Si no sabes la respuesta e4scribe 'No se la respuesta'
-    """
-
-    st.markdown(instrucciones)
-
+    # Setup agents
     base_prompt = hub.pull("langchain-ai/react-agent-template")
-    prompt = base_prompt.partial(instrucciones=instrucciones)
-    st.write("Prompt cargando...")
+    instructions = """
+        Eres un agente diseñado para responder preguntas utilizando Python o analizando archivos CSV.
+        Usa el código de Python 3.11 para responder preguntas.
+        Solo responde después de ejecutar el código necesario. Si no puedes responder, escribe 'No sé la respuesta'.
+    """
+    prompt = base_prompt.partial(instructions=instructions)
 
+    # Define tools
     tools = [PythonREPLTool()]
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
-    agente = create_react_agent(
-        llm=llm,
-        tools=tools,
-        prompt=prompt
+    python_agent = create_react_agent(
+        prompt=prompt,
+        llm=ChatOpenAI(temperature=0, model="gpt-4-turbo"),
+        tools=tools
     )
-    agent_executor=AgentExecutor(
-            agent=agente,
-            tools=tools,
-            verbose=True,
-            handle_parsing_errors=True)
-    st.markdown("### Ejemplos: ")
-    ejemplos = [
-        "Calcula la suma de 2 y 3",
-        "Genera la lista del 1 al 10",
-        "Crea una funcion que calcule el factorial de un numero",
-        "Crea un juego basico de snake con la libreria pygame"
-    ]
-    example = st.selectbox("Selecc:iona un ejemplo:", ejemplos)
+    python_agent_executor = AgentExecutor(agent=python_agent, tools=tools, verbose=True)
 
-    if st.button("Ejecutar ejemplo"):
-        user_input = example
+    csv_agent = create_csv_agent(
+        llm=ChatOpenAI(temperature=0, model="gpt-4"),
+        path="data.csv",  # Replace with your CSV file path
+        verbose=True,
+        allow_dangerous_code=True,
+    )
+
+    # Wrapper for agents
+    def python_agent_wrapper(prompt):
+        return python_agent_executor.invoke({"input": prompt})
+
+    tools = [
+        Tool(
+            name="Python Agent",
+            func=python_agent_wrapper,
+            description="Use this agent to write and execute Python code."
+        ),
+        Tool(
+            name="CSV Agent",
+            func=csv_agent.invoke,
+            description="Use this agent to analyze CSV data."
+        ),
+    ]
+
+    grand_agent = create_react_agent(
+        llm=ChatOpenAI(temperature=0, model="gpt-4-turbo"),
+        tools=tools,
+        prompt=prompt,
+    )
+    grand_agent_executor = AgentExecutor(agent=grand_agent, tools=tools, verbose=True)
+
+    # Predefined tasks
+    st.sidebar.header("Opciones de trabajo")
+    options = [
+        "Calcula la suma de 2 y 3 usando Python Agent",
+        "Crea una función que calcule el factorial de un número",
+        "Genera una lista de los primeros 10 números cuadrados"
+    ]
+    task = st.sidebar.selectbox("Selecciona una tarea:", options)
+
+    if st.sidebar.button("Ejecutar tarea seleccionada"):
         try:
-            respuesta = agent_executor.invoke(input={"input": user_input, "instructions": instrucciones, "agent_scratchpad": ""})
-            st.markdown("### Respuesta del agent: ")
-            st.code(respuesta["output"], language="python")
-            save_history(user_input, respuesta["output"])
-        except ValueError as e:
-            st.error(f"Error en el agent: {str(e)}")
+            result = python_agent_wrapper(task)
+            st.success("Resultado:")
+            st.code(result["output"], language="python")
+            save_history(task, result["output"])
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+
+    # Custom questions
+    st.header("Haz una pregunta al agente")
+    question = st.text_input("Escribe tu pregunta aquí:")
+    if st.button("Ejecutar pregunta"):
+        try:
+            result = grand_agent_executor.invoke({"input": question})
+            st.success("Resultado:")
+            st.code(result["output"], language="python")
+            save_history(question, result["output"])
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+
+    # Display history
+    st.header("Historial")
+    history = load_history()
+    if history:
+        for entry in history:
+            st.text(entry)
+    else:
+        st.info("No hay historial todavía.")
 
 if __name__ == "__main__":
     main()
+

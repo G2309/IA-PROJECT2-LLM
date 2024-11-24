@@ -18,4 +18,4 @@ VOLUME /app/output
 
 COPY . .
 
-CMD ["python", "main.py"]
+CMD ["streamlit", "run", "app.py"]
