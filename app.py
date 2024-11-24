@@ -49,6 +49,16 @@ def main():
           padding-bottom:142px;
         }
 
+        body {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+          background-color: #333;
+          color: white;
+        }
+
         p{
           color:#FFF;
           font: 50px 'Press Start 2P', cursive;
@@ -196,7 +206,6 @@ def main():
         """, unsafe_allow_html=True)
 
     elif selected_option == "Usar Agente Python y CSV":
-        # Agente Python y CSV
         st.title("Agente Interactivo con Python y CSV")
 
         # Instructions for the app
@@ -249,12 +258,51 @@ def main():
             ),
         ]
 
+        grand_agent = create_react_agent(
+            llm=ChatOpenAI(temperature=0, model="gpt-4-turbo"),
+            tools=tools,
+            prompt=prompt,
+        )
+        grand_agent_executor = AgentExecutor(agent=grand_agent, tools=tools, verbose=True)
+
+        # Predefined tasks
+        st.sidebar.header("Opciones de tarea")
+        options = [
+            "Calcula la suma de 2 y 3 usando Python Agent",
+            "Crea una función que calcule el factorial de un número",
+            "Genera una lista de los primeros 10 números cuadrados"
+        ]
+        task = st.sidebar.selectbox("Selecciona una tarea:", options)
+
+        if st.sidebar.button("Ejecutar tarea seleccionada"):
+            try:
+                result = python_agent_wrapper(task)
+                st.success("Resultado:")
+                st.code(result["output"], language="python")
+                save_history(task, result["output"])
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+
+        # Custom questions
+        st.header("Haz una pregunta al agente")
         question = st.text_input("Escribe tu pregunta aquí:")
-        if question:
-            response = tools[0].func(question)
-            save_history(question, response)
-            st.write(response)
+        if st.button("Ejecutar pregunta"):
+            try:
+                result = grand_agent_executor.invoke({"input": question})
+                st.success("Resultado:")
+                st.code(result["output"], language="python")
+                save_history(question, result["output"])
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+
+        # Display history
+        st.header("Historial")
+        history = load_history()
+        if history:
+            for entry in history:
+                st.text(entry)
+        else:
+            st.info("No hay historial todavía.")
 
 if __name__ == "__main__":
     main()
-
